@@ -35,18 +35,19 @@ for _, item in pairs(clownItems) do
     validSlots[item.InventorySlot] = true
 end
 
-local clowns = {}
-local equippedClownItems = {}
-local dropItems = {}
+JustClownThings = {}
+JustClownThings.Clowns = {}
+JustClownThings.EquippedClownItems = {}
+JustClownThings.DropItems = {}
 
 -- type: 6 = Server message, 7 = Console usage, 9 error
-Log = function (message)
+JustClownThings.Log = function (message)
     if DEBUG then
         Game.Log("[JustClownThings] " .. message, 6)
     end
 end
 
-FindClientCharacter = function (character)
+JustClownThings.FindClientCharacter = function (character)
     for key, value in pairs(Client.ClientList) do
         if character == value.Character then return value end
     end
@@ -54,16 +55,16 @@ FindClientCharacter = function (character)
     return nil
 end
 
-DropItem = function (item, character)
+JustClownThings.DropItem = function (item, character)
     if item == nil or character == nil then return end
-    Log(character.Name .. " dropped forbidden item ".. item.Name, 6)
+    JustClownThings.Log(character.Name .. " dropped forbidden item ".. item.Name, 6)
     item.Drop(character)
 end
 
 Hook.Add("roundStart", "JustClownThings.RoundStart", function ()
-    clowns = {}
-    equippedClownItems = {}
-    dropItems = {}
+    JustClownThings.Clowns = {}
+    JustClownThings.EquippedClownItems = {}
+    JustClownThings.DropItems = {}
 end)
 
 Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inventory, item, character, slot, removeItem)
@@ -74,22 +75,21 @@ Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inven
         if character and validSlots[slot] and inventory == character.Inventory then
             -- clown item equipped
             if character.IsAssistant then
-                if not equippedClownItems[character] then 
-                    equippedClownItems[character] = {}
+                if not JustClownThings.EquippedClownItems[character] then 
+                    JustClownThings.EquippedClownItems[character] = {}
                 end
-                equippedClownItems[character][slot] = item 
+                JustClownThings.EquippedClownItems[character][slot] = item 
             else
                 -- non-assistants drop
-                dropItems[item] = character
+                JustClownThings.DropItems[item] = character
             end
         elseif ValidMoveHandling then 
-            for user, entry in pairs(equippedClownItems) do
+            for user, entry in pairs(JustClownThings.EquippedClownItems) do
                 for oldSlot, equippedItem in pairs(entry) do
                     if equippedItem.ID == item.ID then
                         if DEBUG then
                             character = user
-                            Log("Clown " .. character.Name .. " unequipped clown item " .. item.Name)
-                            --print("inventoryPutItem: "..tostring(inventory) .. " item: " .. tostring(item) .. " character: ".. character.Name .. " slot: " .. slot .. " remove: " .. tostring(removeItem))
+                            JustClownThings.Log("Clown " .. character.Name .. " unequipped clown item " .. item.Name)
                         end
                         return false
                     end
@@ -108,28 +108,28 @@ Hook.Add("think", "JustClownThings.think", function ()
             CheckTime = Timer.GetTime() + CheckDelay
 
             -- check clowns for reequip
-            for character, entry in pairs(equippedClownItems) do
+            for character, entry in pairs(JustClownThings.EquippedClownItems) do
                 for slot, item in pairs(entry) do
                     if not item.Removed then
                         if item.ParentInventory == nil or item.ParentInventory ~= character.Inventory or item.ParentInventory.FindIndex(item) ~= slot then
                             -- if item is not equipped anymore
-                            Log("Reequipping clown item to clown "..character.Name)
+                            JustClownThings.Log("Reequipping clown item to clown "..character.Name)
                             if CancelFabricator and item.ParentInventory and item.ParentInventory.Locked then
                                 -- if item is in an active/locked fabricator, drop it before re-equip to stop the craft
-                                dropItems[item] = character
+                                JustClownThings.DropItems[item] = character
                             else
                                 -- otherwise reequip
                                 character.Inventory.TryPutItem(item, slot, true, false, character, true, true)
                             end
-                        elseif not clowns[character] then
+                        elseif not JustClownThings.Clowns[character] then
                             -- if its the first clown item equipped inform user
-                            clowns[character] = true
+                            JustClownThings.Clowns[character] = true
 
-                            local client = FindClientCharacter(character)
+                            local client = JustClownThings.FindClientCharacter(character)
                             if client then
                                 Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
                             end
-                            Log(character.Name .. " equipped a clown item " .. item.Name .. " and is now a clown.")
+                            JustClownThings.Log(character.Name .. " equipped a clown item " .. item.Name .. " and is now a clown.")
                         end
                     end
                 end
@@ -139,7 +139,7 @@ Hook.Add("think", "JustClownThings.think", function ()
                     local wornItem = character.Inventory.GetItemAt(slot)
                     for identifier in identifiers do
                         if wornItem and wornItem.Prefab.Identifier == identifier then
-                            dropItems[wornItem] = character
+                            JustClownThings.DropItems[wornItem] = character
                             break
                         end
                     end
@@ -147,11 +147,11 @@ Hook.Add("think", "JustClownThings.think", function ()
             end
         
             -- drop all items marked for drop
-            for item, character in pairs(dropItems) do
-                Log("Dropping forbidden item " .. item.Name .. " for" .. character.Name)
-                DropItem(item, character)
+            for item, character in pairs(JustClownThings.DropItems) do
+                JustClownThings.Log("Dropping forbidden item " .. item.Name .. " for" .. character.Name)
+                JustClownThings.DropItem(item, character)
             end
-            dropItems = {}
+            JustClownThings.DropItems = {}
         end
     end
 end)
