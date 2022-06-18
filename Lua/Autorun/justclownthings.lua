@@ -1,4 +1,4 @@
--- JustClownThings v1-SNAPSHOT
+-- JustClownThings v1
 -- by MassCraxx
 
 -- CONFIG
