@@ -1,10 +1,9 @@
--- JustClownThings v1
+-- JustClownThings v2
 -- by MassCraxx
 
 -- CONFIG
 local DEBUG = true
-local CheckDelay = 3
-local CheckTime = -1
+local CheckDelaySeconds = 2
 
 local clownItems = {
     clowncostume = {
@@ -20,15 +19,17 @@ local clownItems = {
 
 -- these items will be dropped as clown. Key is InventorySlot index, value is the item id
 local ForbiddenItems = {}
+ForbiddenItems[2] = {"divingmask"}
 ForbiddenItems[4] = {"divingsuit","combatdivingsuit","abyssdivingsuit","slipsuit","pucs"}
 
 -- if true, will drop items that are moved to active fabricator to the ground before reequipping them to stop the craft
-local CancelFabricator = true
+local CancelFabricator = false
 
--- EXPERIMENTAL: this takes more performance, but could potentially prevent attached items from moving in the first place
-local ValidMoveHandling = false 
+-- if true, attempt to attach a clown diving mask if a clown mask is removed from the game
+local ForceAttachCraftedMask = true
 
 
+local checkTime = -1
 -- a list of all slots that can contain configured clown items
 local validSlots = {}
 for _, item in pairs(clownItems) do
@@ -61,10 +62,27 @@ JustClownThings.DropItem = function (item, character)
     item.Drop(character)
 end
 
+JustClownThings.Fabricators = {}
+JustClownThings.GetFabricators = function()
+    if #JustClownThings.Fabricators > 0 then
+        return JustClownThings.Fabricators
+    elseif Game.RoundStarted and #JustClownThings.Fabricators == 0 then
+        for item in Submarine.MainSub.GetItems(false) do
+            local isFabricator = item.GetComponentString("Fabricator")
+            if isFabricator ~= nil and item.Prefab.Identifier == "fabricator" then
+                table.insert(JustClownThings.Fabricators, isFabricator)
+            end
+        end
+    end
+
+    return JustClownThings.Fabricators
+end
+
 Hook.Add("roundStart", "JustClownThings.RoundStart", function ()
     JustClownThings.Clowns = {}
     JustClownThings.EquippedClownItems = {}
     JustClownThings.DropItems = {}
+    JustClownThings.Fabricators = {}
 end)
 
 Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inventory, item, character, slot, removeItem)
@@ -72,29 +90,37 @@ Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inven
 
     local clownItem = clownItems[item.Prefab.Identifier.Value]
     if clownItem then
-        if character and validSlots[slot] and inventory == character.Inventory then
-            -- clown item equipped
+        -- if valid character and moved slot is relevant and item is moved into characters inventory and not attached to clown already
+        if character and validSlots[slot] and inventory == character.Inventory and not JustClownThings.EquippedClownItems[item] then
             if character.IsAssistant then
-                if not JustClownThings.EquippedClownItems[character] then 
-                    JustClownThings.EquippedClownItems[character] = {}
-                end
-                JustClownThings.EquippedClownItems[character][slot] = item 
-            else
-                -- non-assistants drop
-                JustClownThings.DropItems[item] = character
-            end
-        elseif ValidMoveHandling then 
-            for user, entry in pairs(JustClownThings.EquippedClownItems) do
-                for oldSlot, equippedItem in pairs(entry) do
-                    if equippedItem.ID == item.ID then
-                        if DEBUG then
-                            character = user
-                            JustClownThings.Log("Clown " .. character.Name .. " unequipped clown item " .. item.Name)
+                -- clown item equipped (lock for further handling)
+                JustClownThings.EquippedClownItems[item] = true 
+
+                if not JustClownThings.Clowns[character] then
+                    -- if its the first clown item equipped
+                    JustClownThings.Clowns[character] = {}
+
+                    -- inform user (do in timer to make sure non-blocking)
+                    Timer.Wait(function ()
+                        local client = JustClownThings.FindClientCharacter(character)
+                        if client then
+                            Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
                         end
-                        return false
+                    end, 100)
+
+                    JustClownThings.Log(character.Name .. " equipped a clown item " .. item.Name .. " and is now a clown.")
+                else
+                    -- if player was clown before, unlock previous clown item in same slot (if exists)
+                    local alreadyEquippedInSlot = JustClownThings.Clowns[character][slot]
+                    if alreadyEquippedInSlot then
+                        JustClownThings.EquippedClownItems[alreadyEquippedInSlot] = nil
                     end
                 end
                 
+                JustClownThings.Clowns[character][slot] = item
+            else
+                -- non-assistants drop
+                JustClownThings.DropItems[item] = character
             end
         end
     end
@@ -104,16 +130,16 @@ end)
 
 Hook.Add("think", "JustClownThings.think", function ()
     if Game.RoundStarted and #Client.ClientList > 0 then
-        if CheckTime and Timer.GetTime() > CheckTime then
-            CheckTime = Timer.GetTime() + CheckDelay
+        if checkTime and Timer.GetTime() > checkTime then
+            checkTime = Timer.GetTime() + CheckDelaySeconds
 
             -- check clowns for reequip
-            for character, entry in pairs(JustClownThings.EquippedClownItems) do
+            for character, entry in pairs(JustClownThings.Clowns) do
                 for slot, item in pairs(entry) do
-                    if not item.Removed then
+                    if item and not item.Removed then
+                        -- if itemsInventory is not clowns inventory anymore or not on equipped slot
                         if item.ParentInventory == nil or item.ParentInventory ~= character.Inventory or item.ParentInventory.FindIndex(item) ~= slot then
-                            -- if item is not equipped anymore
-                            JustClownThings.Log("Reequipping clown item to clown "..character.Name)
+                            JustClownThings.Log("Reequipping clown item ".. item.Name .." to clown "..character.Name)
                             if CancelFabricator and item.ParentInventory and item.ParentInventory.Locked then
                                 -- if item is in an active/locked fabricator, drop it before re-equip to stop the craft
                                 JustClownThings.DropItems[item] = character
@@ -121,16 +147,55 @@ Hook.Add("think", "JustClownThings.think", function ()
                                 -- otherwise reequip
                                 character.Inventory.TryPutItem(item, slot, true, false, character, true, true)
                             end
-                        elseif not JustClownThings.Clowns[character] then
-                            -- if its the first clown item equipped inform user
-                            JustClownThings.Clowns[character] = true
-
-                            local client = JustClownThings.FindClientCharacter(character)
-                            if client then
-                                Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
-                            end
-                            JustClownThings.Log(character.Name .. " equipped a clown item " .. item.Name .. " and is now a clown.")
                         end
+                    elseif ForceAttachCraftedMask and item and JustClownThings.EquippedClownItems[item] then
+                        if item.Prefab.Identifier == "clownmask" then
+                        -- clown got his clownmask deleted from game, if there is a crafted clown diving mask somewhere, attach it instead
+                            local clownDivingMask = nil
+
+                            -- check player inventory
+                            for item in character.Inventory.AllItems do
+                                if item.Prefab.Identifier == "clowndivingmask" then
+                                    clownDivingMask = item
+                                    JustClownThings.Log("Clown "..character.Name.. " acquired a clown diving mask")
+                                    break
+                                end
+                            end
+                            
+                            if clownDivingMask == nil then
+                                -- check fabricators for diving masks
+                                local fabricators = JustClownThings.GetFabricators()
+                                for fabricator in fabricators do
+                                    local outputItem = fabricator.OutputContainer.Inventory.GetItemAt(0)
+                                    if outputItem and outputItem.Prefab.Identifier == "clowndivingmask" then
+                                        -- found crafted diving mask
+                                        clownDivingMask = outputItem
+                                        JustClownThings.Log("Clown "..character.Name.. " crafted a clown diving mask")
+                                        break
+                                    end
+
+                                    if clownDivingMask == nil then
+                                        for item in fabricator.OutputContainer.Inventory.AllItems do
+                                            if item.Prefab.Identifier == "clowndivingmask" then
+                                                clownDivingMask = item
+                                                JustClownThings.Log("Clown "..character.Name.. " crafted a clown diving mask")
+                                                break
+                                            end
+                                        end
+
+                                        if clownDivingMask == nil then
+                                            JustClownThings.Log("!!! Clown "..character.Name.. " is a TRICKSTER and got rid of his clown mask... !!!")
+                                        end
+                                    end
+                                end
+                            end
+
+                            -- reattach clown diving mask or nil if none found
+                            JustClownThings.Clowns[character][slot] = clownDivingMask
+                        end
+                        
+                        -- dont check again
+                        JustClownThings.EquippedClownItems[item] = nil
                     end
                 end
 
@@ -148,7 +213,6 @@ Hook.Add("think", "JustClownThings.think", function ()
         
             -- drop all items marked for drop
             for item, character in pairs(JustClownThings.DropItems) do
-                JustClownThings.Log("Dropping forbidden item " .. item.Name .. " for" .. character.Name)
                 JustClownThings.DropItem(item, character)
             end
             JustClownThings.DropItems = {}
