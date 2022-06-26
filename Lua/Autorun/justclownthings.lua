@@ -1,4 +1,4 @@
--- JustClownThings v2
+-- JustClownThings v3
 -- by MassCraxx
 
 -- CONFIG
@@ -22,12 +22,17 @@ local ForbiddenItems = {}
 ForbiddenItems[2] = {"divingmask"}
 ForbiddenItems[4] = {"divingsuit","combatdivingsuit","abyssdivingsuit","slipsuit","pucs"}
 
+-- these talents can not be picked
+local ForbiddenTalents = {"slapstickexpert"}
+
 -- if true, will drop items that are moved to active fabricator to the ground before reequipping them to stop the craft
 local CancelFabricator = false
 
 -- if true, attempt to attach a clown diving mask if a clown mask is removed from the game
 local ForceAttachCraftedMask = true
 
+-- if not nil, true clowns (that used !clown) will be moved into this team
+local ClownTeam = 3
 
 local checkTime = -1
 -- a list of all slots that can contain configured clown items
@@ -85,6 +90,20 @@ Hook.Add("roundStart", "JustClownThings.RoundStart", function ()
     JustClownThings.Fabricators = {}
 end)
 
+if #ForbiddenTalents > 0 then
+    Hook.Add("character.updateTalent", "JustClownThings.updateTalent", function(character, talent)
+        for forbiddenTalent in ForbiddenTalents do
+            if talent.Identifier == forbiddenTalent then
+                local client = JustClownThings.FindClientCharacter(character)
+                if client then
+                    Game.SendDirectChatMessage("", "The picked talent '".. talent.Name .."' is forbidden and will have no effect.", nil, ChatMessageType.Error, client)
+                end
+                return true
+            end
+        end
+    end)
+end
+
 Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inventory, item, character, slot, removeItem)
     if character ~= nil and (character.IsBot or not character.IsHuman or character.IsDead) then return nil end
 
@@ -97,18 +116,7 @@ Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inven
                 JustClownThings.EquippedClownItems[item] = true 
 
                 if not JustClownThings.Clowns[character] then
-                    -- if its the first clown item equipped
                     JustClownThings.Clowns[character] = {}
-
-                    -- inform user (do in timer to make sure non-blocking)
-                    Timer.Wait(function ()
-                        local client = JustClownThings.FindClientCharacter(character)
-                        if client then
-                            Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
-                        end
-                    end, 100)
-
-                    JustClownThings.Log(character.Name .. " equipped a clown item " .. item.Name .. " and is now a clown.")
                 else
                     -- if player was clown before, unlock previous clown item in same slot (if exists)
                     local alreadyEquippedInSlot = JustClownThings.Clowns[character][slot]
@@ -116,6 +124,23 @@ Hook.Add("inventoryPutItem", "JustClownThings.inventoryPutItem", function (inven
                         JustClownThings.EquippedClownItems[alreadyEquippedInSlot] = nil
                     end
                 end
+
+                if not JustClownThings.Clowns[character][slot] then
+                    -- if user had no clown item on this slot, send message
+                    Timer.Wait(function ()
+                        local client = JustClownThings.FindClientCharacter(character)
+                        if client then
+                            local message = item.Name.." is now attached to you."
+                            if JustClownThings.Clowns[character][2] and JustClownThings.Clowns[character][3] then
+                                message = message .. "\nType '!clown' in chat to become a true clown.\n\nA true clown may be seen hostile by the crew but is allowed to grief."
+                            end
+
+                            Game.SendDirectChatMessage("", message, nil, ChatMessageType.Error, client)
+                        end
+                    end, 100)
+                end
+
+                JustClownThings.Log(character.Name .. " equipped a clown item " .. item.Name)
                 
                 JustClownThings.Clowns[character][slot] = item
             else
@@ -217,5 +242,29 @@ Hook.Add("think", "JustClownThings.think", function ()
             end
             JustClownThings.DropItems = {}
         end
+    end
+end)
+
+-- Commands hook
+Hook.Add("chatMessage", "JustClownThings.ChatMessage", function (message, client)
+
+    if message == "!clown" then
+        if JustClownThings.Clowns[client.Character] then
+            -- if clown is wearing a full clown costume, switch teams and notify crew
+            if JustClownThings.Clowns[client.Character][2] and JustClownThings.Clowns[client.Character][3] then
+                if ClownTeam then
+                    client.Character.TeamID = ClownTeam
+                end
+
+                Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
+                Game.SendMessage("WATCH OUT! " .. client.Name .. " is a servant of the Honkmother and may disobey orders.", ChatMessageType.Server)
+            else
+                Game.SendDirectChatMessage("", "You must equip a full clown outfit to become a true clown.", nil, ChatMessageType.Error, client)
+            end
+        else
+            Game.SendDirectChatMessage("", "You must be an assistant and wear a full clown outfit to become a true clown.", nil, ChatMessageType.Error, client)
+        end
+
+        return true
     end
 end)
