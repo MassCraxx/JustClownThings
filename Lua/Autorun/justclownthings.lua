@@ -1,4 +1,4 @@
--- JustClownThings v3
+-- JustClownThings v4
 -- by MassCraxx
 
 -- CONFIG
@@ -32,7 +32,7 @@ local CancelFabricator = false
 local ForceAttachCraftedMask = true
 
 -- if not nil, true clowns (that used !clown) will be moved into this team
-local ClownTeam = 3
+local ClownTeam = CharacterTeamType.Team2
 
 local checkTime = -1
 -- a list of all slots that can contain configured clown items
@@ -253,7 +253,8 @@ Hook.Add("chatMessage", "JustClownThings.ChatMessage", function (message, client
             -- if clown is wearing a full clown costume, switch teams and notify crew
             if JustClownThings.Clowns[client.Character][2] and JustClownThings.Clowns[client.Character][3] then
                 if ClownTeam then
-                    client.Character.TeamID = ClownTeam
+                    client.Character.SetOriginalTeam(ClownTeam)
+                    client.Character.UpdateTeam()
                 end
 
                 Game.SendDirectChatMessage("", "PRAISE THE HONKMOTHER!", nil, ChatMessageType.Error, client)
