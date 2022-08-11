@@ -1,4 +1,4 @@
--- JustClownThings v5
+-- JustClownThings v6
 -- by MassCraxx
 
 -- CONFIG
@@ -96,7 +96,7 @@ if #ForbiddenTalents > 0 then
             if talent.Identifier == forbiddenTalent then
                 local client = JustClownThings.FindClientCharacter(character)
                 if client then
-                    Game.SendDirectChatMessage("", "The picked talent '".. talent.Identifier .."' is forbidden and will have no effect.", nil, ChatMessageType.Error, client)
+                    Game.SendDirectChatMessage("", "The picked talent '".. tostring(talent.Identifier) .."' is forbidden and will have no effect.", nil, ChatMessageType.Error, client)
                 end
                 return true
             end
